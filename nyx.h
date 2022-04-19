@@ -116,9 +116,16 @@ SOFTWARE.
 #define HYPERCALL_KAFL_RAX_ID_VMWARE				0x8080801f
 
 typedef struct{
+	/* 32 Byte Header */
 	int32_t size;
+	uint8_t redqueen_run;
+	uint8_t padding[27];
+
+	/* Fuzzing Input */
 	uint8_t data[];
 } kAFL_payload;
+
+#define NYX_INPUT_BUFFER_HEADER_SIZE 32
 
 typedef struct{
 	uint64_t ip[4];
@@ -370,7 +377,7 @@ typedef struct host_config_s{
 /* HYPERCALL_KAFL_SET_AGENT_CONFIG */
 
 #define NYX_AGENT_MAGIC 0x4178794e
-#define NYX_AGENT_VERSION 2
+#define NYX_AGENT_VERSION 3
 
 typedef struct agent_config_s{
 	uint32_t agent_magic;
@@ -388,6 +395,7 @@ typedef struct agent_config_s{
 	uint8_t pt_cr3_mode;
 
   	uint8_t dump_payloads; /* set by hypervisor */
+	uint8_t agent_redqueen;		/* agent supports compile-time redqueen (e.g. CMPLOG) */
   /* more to come */
 } __attribute__((packed)) agent_config_t;
 
