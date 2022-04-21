@@ -3,7 +3,7 @@
 #include <stdlib.h>
 #include <dlfcn.h>
 #include "misc/harness_state.h"
-#include "netfuzz/syscalls.h"
+#include "misc/syscalls.h"
 #include "nyx.h"
 
 //#define DEBUG_HARNESS_STATE

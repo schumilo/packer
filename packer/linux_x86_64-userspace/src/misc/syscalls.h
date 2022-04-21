@@ -41,3 +41,10 @@ int real_getpeername(int sockfd, struct sockaddr *addr, socklen_t *addrlen);
 char *real_fgets(char *s, int size, FILE *stream);
 int real_open(const char *pathname, int flags);
 int real_ioctl(int fd, int cmd, void *argp);
+
+int _mlock(void* dst, size_t size);
+int _munlock(void* dst, size_t size);
+int _mlockall(int flags);
+pid_t _fork(void);
+long int random(void);
+int rand(void);

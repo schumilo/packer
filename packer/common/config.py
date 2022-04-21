@@ -295,13 +295,13 @@ class PackerConfiguration:
         parser.add_argument('--setup_folder', help='pack addional setup folder', default="", type=parse_is_setup_dir)
         parser.add_argument('--purge', help='delete output_dir', action='store_true', default=False)
 
-        tracing = parser.add_argument_group("Intel-PT Option")
+        tracing = parser.add_argument_group("Intel-PT Options")
 
         tracing.add_argument('--no_pt_auto_conf_a', help='disable Intel PT range auto configuration for range A (usually the target executable without shared libraries)', action='store_true', default=False)
         tracing.add_argument('--no_pt_auto_conf_b', help='disable Intel PT range auto configuration for range B (usually all shared libraries without the target executable)', action='store_true', default=False)
 
 
-        nyx_net_group = parser.add_argument_group("Nyx-Net Option")
+        nyx_net_group = parser.add_argument_group("Nyx-Net Options")
 
         nyx_net_group.add_argument('--nyx_net', help='enable nyx network fuzzing', action='store_true', default=False)
         nyx_net_group.add_argument('--nyx_net_port', metavar='<nyx_net_port>', help='fuzz specified network port', default=0, type=int)
@@ -314,6 +314,9 @@ class PackerConfiguration:
         nyx_net_group.add_argument('--add_pre_process_args', metavar='<pre_process_ags>', help='args of preprocess', default="", type=str)
         nyx_net_group.add_argument('--ignore_udp_port', metavar='<ignore_udp_port>', help='ignore specific UDP port', default=0, type=int)
         nyx_net_group.add_argument('--set_client_udp_port', metavar='<set_client_udp_port>', help='set UDP client port number', default=0, type=int)
+
+        nyx_net_group = parser.add_argument_group("AFL++ Options")
+        nyx_net_group.add_argument('--cmplog', help='path to cmplog executable', metavar='<executable>', action=FullPath, type=parse_is_file)
 
         debug_group = parser.add_argument_group("Debug Options")
 

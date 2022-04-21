@@ -17,12 +17,17 @@
 #include <time.h>
 #include <link.h>
 #include <stdbool.h>
-
+#include <sys/ipc.h>
+#include <sys/shm.h>
+#include <sys/stat.h>
 #include "nyx.h"
+#include "misc/exit_handler.h"
 #include "misc/crash_handler.h"
 #include "misc/harness_state.h"
-
-//#define HYPERCALL_KAFL_RELEASE_DEBUG
+#include "misc/syscalls.h"
+#include "afl/autodict.h"
+#include "afl/cmplog.h"
+#include "misc/debug.h"
 
 #define likely(x)       __builtin_expect((x),1)
 #define unlikely(x)     __builtin_expect((x),0)
@@ -30,13 +35,8 @@
 __attribute__((weak)) extern unsigned int __afl_final_loc;
 unsigned int* __afl_final_loc_ptr = &__afl_final_loc;
 
-__attribute__((weak)) extern uint32_t __afl_dictionary_len;
-uint32_t* __afl_dictionary_len_ptr = &__afl_dictionary_len;
-
-__attribute__((weak)) extern uint8_t* __afl_dictionary;
-uint8_t** __afl_dictionary_ptr = &__afl_dictionary;
-
 size_t input_buffer_size = 0;
+uint32_t worker_id = 0;
 bool fuzz_process = false;
 
 /* dump nyx-net payload */
@@ -47,11 +47,6 @@ bool payload_mode = false;
 #else
 #define DEBUG(f_, ...) 
 #endif
-
-//#ifdef NET_FUZZ
-#include "netfuzz/syscalls.h"
-//#endif
-
 
 #ifndef LEGACY_MODE
 #include "interpreter.h"
@@ -133,36 +128,6 @@ static void dump_payload(void* buffer, size_t len){
     kAFL_hypercall(HYPERCALL_KAFL_DUMP_FILE, (uint64_t) (&file_obj));
 }
 
-void hexdump(const void* data, size_t size) {
-	char ascii[17];
-	size_t i, j;
-	ascii[16] = '\0';
-	for (i = 0; i < size; ++i) {
-		hprintf("%02X ", ((unsigned char*)data)[i]);
-		if (((unsigned char*)data)[i] >= ' ' && ((unsigned char*)data)[i] <= '~') {
-			ascii[i % 16] = ((unsigned char*)data)[i];
-		} else {
-			ascii[i % 16] = '.';
-		}
-		if ((i+1) % 8 == 0 || i+1 == size) {
-			hprintf(" ");
-			if ((i+1) % 16 == 0) {
-				hprintf("|  %s \n", ascii);
-			} else if (i+1 == size) {
-				ascii[(i+1) % 16] = '\0';
-				if ((i+1) % 16 <= 8) {
-					hprintf(" ");
-				}
-				for (j = (i+1) % 16; j < 16; ++j) {
-					hprintf("   ");
-				}
-				hprintf("|  %s \n", ascii);
-			}
-		}
-	}
-}
- 
-
 void hprintf_payload(char* data, size_t len){
 
     if(!payload_mode){
@@ -178,7 +143,7 @@ void hprintf_payload(char* data, size_t len){
     }
 
     //hprintf("=> STR: %s\n", buffer);
-    //hexdump(data, len);
+    //hprintf_hexdump(data, len);
 
     char* tmp = NULL;
     //asprintf(&tmp, "packet( inputs=[], borrows=[], data=\"%s\")\n", buffer);
@@ -358,59 +323,6 @@ static void setup_interpreter(void* payload_buffer) {
 }
 #endif
 
-
-
-/* fuzz */
-
-int _mlock(void* dst, size_t size) {
-    return syscall(SYS_mlock, dst, size);
-}
-
-int _munlock(void* dst, size_t size) {
-    return syscall(SYS_munlock, dst, size);
-}
-
-int _mlockall(int flags){
-    return syscall(SYS_mlockall, flags);
-}
-
-pid_t _fork(void){
-    return syscall(SYS_fork);
-}
-
-long int random(void){
-    return 0;
-}
-
-int rand(void){
-    return 0;
-}
-
-static inline uint64_t bench_start(void)
-{
-  unsigned  cycles_low, cycles_high;
-  asm volatile( "CPUID\n\t" // serialize
-                "RDTSC\n\t" // read clock
-                "MOV %%edx, %0\n\t"
-                "MOV %%eax, %1\n\t"
-                : "=r" (cycles_high), "=r" (cycles_low)
-                :: "%rax", "%rbx", "%rcx", "%rdx" );
-  return ((uint64_t) cycles_high << 32) | cycles_low;
-}
-
-static void debug_time(void){
-    time_t timer;
-    char buffer[26];
-    struct tm* tm_info;
-
-    time(&timer);
-    tm_info = localtime(&timer);
-
-    strftime(buffer, 26, "%Y-%m-%d %H:%M:%S", tm_info);
-    hprintf("Time: %s - TSC: %lx\n", buffer, bench_start);
-}
-
-
 typedef struct address_range_s{
     char* name;
     bool found;
@@ -465,72 +377,9 @@ void calc_address_range(address_range_t* ar){
     }
 }
 
-/* 
-    Enable this option to boost targets running in reload mode. 
-    Breaks non-reload mode.
-
-     ** Experimental stuff as always! **
-*/
-void fast_exit(void){
-#ifdef HYPERCALL_KAFL_RELEASE_DEBUG
-    hprintf("HYPERCALL_KAFL_RELEASE in %s %d (%d)\n", __func__, __LINE__, fuzz_process);
-#endif
-    if(fuzz_process){
-        kAFL_hypercall(HYPERCALL_KAFL_RELEASE, 0);
-    }
-}
-
- void pthread_exit(void *retval){
-     hprintf("%s: sig:\n", __func__);
-    while(1){}
- }
-
-#ifdef NET_FUZZ
-void exit(int status){
-#ifdef HYPERCALL_KAFL_RELEASE_DEBUG
-    hprintf("HYPERCALL_KAFL_RELEASE in %s %d (%d)\n", __func__, __LINE__, fuzz_process);
-#endif
-    if(fuzz_process){
-        kAFL_hypercall(HYPERCALL_KAFL_RELEASE, 0);
-    }
-
-    /* remove the following **two** lines if target runs as daemon (detached from termianl) */
-    void (*real_exit)(int) = dlsym(RTLD_NEXT,"exit");
-    real_exit(status);
-    while(1){}
-}
-#endif
-
-int raise(int sig){
-    hprintf("%s: sig: %d\n", __func__, sig);
-    while(1){}
-    kAFL_hypercall(HYPERCALL_KAFL_RELEASE, 0);
-    return 0;
-}
-
-int kill(pid_t pid, int sig){
-    hprintf("%s: sig: %d [PID:%d]\n", __func__, sig, pid);
-    while(1){}
-}
-
-
-#ifdef NET_FUZZ
-void _exit(int status){
-    if(fuzz_process){
-    #ifdef HYPERCALL_KAFL_RELEASE_DEBUG
-        hprintf("HYPERCALL_KAFL_RELEASE in %s %d\n", __func__, __LINE__);
-    #endif
-        kAFL_hypercall(HYPERCALL_KAFL_RELEASE, 0);
-    }
-    else{
-        real__exit(0);
-    }
-    while(1){}
-}
-#endif
-
 void capabilites_configuration(bool timeout_detection, bool agent_tracing, bool ijon_tracing){
 
+#ifndef NYX_CMPLOG
     static bool done = false;
 
     if(!done){
@@ -554,6 +403,7 @@ void capabilites_configuration(bool timeout_detection, bool agent_tracing, bool 
         hprintf("[capablities] host_config.payload_buffer_size: 0x%"PRIx64"x\n", host_config.payload_buffer_size);
 
         input_buffer_size = host_config.payload_buffer_size;
+        worker_id = host_config.worker_id;
 
         trace_buffer = mmap((void*)NULL, host_config.bitmap_size, PROT_READ | PROT_WRITE, MAP_SHARED | MAP_ANONYMOUS, -1, 0);
         memset(trace_buffer, 0xff, host_config.bitmap_size);
@@ -578,6 +428,11 @@ void capabilites_configuration(bool timeout_detection, bool agent_tracing, bool 
             agent_config.coverage_bitmap_size = map_size;
         }
 
+        /* AFL++ CMPLOG support (redqueen) */
+        if (get_harness_state()->afl_mode && real_getenv("NYX_CMPLOG")){
+            agent_config.agent_redqueen = 1;
+        }
+
 #ifdef NET_FUZZ
         agent_config.agent_non_reload_mode = 0; //(uint8_t) ijon_tracing; /* fix me later */
 #else
@@ -598,6 +453,7 @@ void capabilites_configuration(bool timeout_detection, bool agent_tracing, bool 
         
         done = true;
     }
+#endif
 }
 
 
@@ -639,95 +495,11 @@ void dump_mappings(void){
     fclose(f);
 }
 
-pid_t fork(void){
-    //hprintf("ATTEMPT TO FORK?!!!\n");
-#ifdef LEGACY_MODE
-    kAFL_hypercall(HYPERCALL_KAFL_RELEASE, 0);
-#endif
-    return _fork();
-    while(1){
-    }
-}
-
-int execve(const char *filename, char *const argv[],
-                  char *const envp[]){
-
-#ifdef LEGACY_MODE
-    /* fix to support bash out-of-the-box */
-    kAFL_hypercall(HYPERCALL_KAFL_RELEASE, 0);
-#endif
-
-    hprintf("ATTEMPT TO execve?!!!\n");
-    while(1){
-
-    }
-}
-
-int execl(const char *pathname, const char *arg, ...){
-    hprintf("ATTEMPT TO %s?!!!\n", __func__);
-    while(1){
-    }
-}
-       
-int execlp(const char *file, const char *arg, ...){
-    hprintf("ATTEMPT TO %s?!!!\n", __func__);
-    while(1){
-    }
-}
-
-int execle(const char *pathname, const char *arg, ...){
-    hprintf("ATTEMPT TO %s?!!!\n", __func__);
-    while(1){
-    }    
-}
-     
-#ifdef LEGACY_MODE
-int execv(const char *pathname, char *const argv[]){
-    //hprintf("ATTEMPT TO %s?!!!\n", __func__);
-    kAFL_hypercall(HYPERCALL_KAFL_RELEASE, 0);
-    while(1){
-    }     
-}
-#endif
-       
-int execvp(const char *file, char *const argv[]){
-    hprintf("ATTEMPT TO %s?!!!\n", __func__);
-    while(1){
-    }    
-}
-       
-int execvpe(const char *file, char *const argv[],
-                       char *const envp[]){
-    hprintf("ATTEMPT TO %s?!!!\n", __func__);
-    while(1){
-    }    
-}
-
-int clearenv(void){
-    hprintf("ATTEMPT TO clearenv?!!!\n");
-    while(1){
-
-    }
-}
-
-static void check_afl_auto_dict(){
-
-    /* copy AFL autodict over to host */
-    if (__afl_dictionary_len_ptr && __afl_dictionary_ptr){
-        if (__afl_dictionary_len && __afl_dictionary){
-            _mlock((void*)__afl_dictionary, (size_t)__afl_dictionary_len);
-            kafl_dump_file_t file_obj = {0};
-            file_obj.file_name_str_ptr = (uintptr_t)"afl_autodict.txt";
-            file_obj.append = 1;
-            file_obj.bytes = __afl_dictionary_len;
-            file_obj.data_ptr = (uintptr_t)__afl_dictionary;
-            kAFL_hypercall(HYPERCALL_KAFL_DUMP_FILE, (uintptr_t) (&file_obj));
-            _munlock((void*)__afl_dictionary, (size_t)__afl_dictionary_len);
-        }
-    }
-}
-
 void nyx_init_start(void){
+
+#ifdef NYX_CMPLOG
+    return nyx_init_cmplog_start();
+#endif
 
      /* this process is fuzzed -> set this global var to true such that 
       * all exit handlers are able to check it and raise an exit hypercall 
@@ -819,7 +591,7 @@ void nyx_init_start(void){
 
 #ifdef LEGACY_MODE
     if(!stdin_mode){
-    real_dup2(open("/dev/null", O_RDONLY), STDIN_FILENO);
+        real_dup2(open("/dev/null", O_RDONLY), STDIN_FILENO);
     }
 #endif
 
@@ -829,12 +601,14 @@ void nyx_init_start(void){
 
     //capabilites_configuration(timeout_detection, agent_tracing, ijon_tracing);
 
+    int input_file = open("/tmp/input_shm_buffer", O_RDWR | O_CREAT | O_EXCL, 0644);
+    ftruncate(input_file, input_buffer_size);
+    fsync(input_file);
 #ifndef LEGACY_MODE      
-    void* payload_buffer = mmap(NULL, input_buffer_size, PROT_READ | PROT_WRITE, MAP_SHARED | MAP_ANONYMOUS, -1, 0);
-
+    void* payload_buffer = mmap(NULL, input_buffer_size, PROT_READ | PROT_WRITE, MAP_SHARED, input_file, 0);
     //void* payload_buffer = mmap((void*)NULL, input_buffer_size, PROT_READ | PROT_WRITE, MAP_SHARED | MAP_ANONYMOUS, -1, 0);
 #else
-    kAFL_payload* payload_buffer = mmap(NULL, input_buffer_size, PROT_READ | PROT_WRITE, MAP_SHARED | MAP_ANONYMOUS, -1, 0);
+    kAFL_payload* payload_buffer = mmap(NULL, input_buffer_size, PROT_READ | PROT_WRITE, MAP_SHARED, input_file, 0);
 #endif
     _mlock(payload_buffer, (size_t)input_buffer_size);
     //hprintf("mlock done\n");
@@ -952,7 +726,7 @@ void nyx_init_start(void){
     config_handler();
 
     if(get_harness_state()->fast_exit_mode){
-        atexit(fast_exit);
+        atexit(nyx_fast_exit);
     }
 
 #ifdef NET_FUZZ
@@ -1026,6 +800,13 @@ void nyx_init_start(void){
             close(pipe_stdout_hprintf[0]);
             #endif  
 
+            if(payload_buffer->redqueen_run && get_harness_state()->afl_mode){
+#ifdef LEGACY_MODE
+                run_cmplog_executable(payload_buffer->data, payload_buffer->size, worker_id);
+#else
+                habort("not implemented...");
+#endif
+            }
             return;
         }
         else if(pid > 0){
@@ -1059,8 +840,8 @@ void nyx_init_start(void){
             }
             hprintf("-----------------------------\n");
             #endif 
-         
-            kAFL_hypercall(HYPERCALL_KAFL_RELEASE, 0);
+
+            nyx_exit();         
             mlock_enabled = 0;
 
         }
@@ -1070,6 +851,7 @@ void nyx_init_start(void){
     }
 }
 
+#ifndef NYX_CMPLOG
 char *getenv(const char *name){
 
     if(get_harness_state()->afl_mode && !strcmp(name, "__AFL_SHM_ID")){
@@ -1092,6 +874,7 @@ void *shmat(int shmid, const void *shmaddr, int shmflg){
     void* (*_shmat)(int shmid, const void *shmaddr, int shmflg) = dlsym(RTLD_NEXT, "shmat"); 
     return _shmat(shmid, shmaddr, shmflg);
 }
+#endif
 
 void nyx_init(void){
     capabilites_configuration(false, false, true);
@@ -1150,6 +933,9 @@ int __libc_start_main(int (*main) (int,char **,char **),
 
     original__libc_start_main = dlsym(RTLD_NEXT,"__libc_start_main");
 
+
+#ifndef NYX_CMPLOG
+
     /* Check if this is our target process we want to fuzz. 
      *       **Rewrite this code** 
      */
@@ -1157,13 +943,25 @@ int __libc_start_main(int (*main) (int,char **,char **),
         hprintf("Warning: argv[0] = %s\n", ubp_av[0]);
         return original__libc_start_main(main,argc,ubp_av, init,fini,rtld_fini,stack_end);
     }
+#else
+    /* AFL++ cmplog SHM */
+    init_aflpp_cmplog();
+
+    /* Check if this is our target process we want to fuzz. 
+     *       **Rewrite this code** 
+     */
+    if(strcmp(ubp_av[0], "/tmp/target_executable_cmplog")){
+        hprintf("Warning: argv[0] = %s\n", ubp_av[0]);
+        return original__libc_start_main(main,argc,ubp_av, init,fini,rtld_fini,stack_end);
+    }
+#endif
 
     fptr_read = dlsym(RTLD_NEXT, "read"); 
     fptr_getline = dlsym(RTLD_NEXT, "getline"); 
 
     set_harness_state();
     init_crash_handling();
-
+    
     original_main = main;
 
     return original__libc_start_main(__main,argc,ubp_av, init,fini,rtld_fini,stack_end);

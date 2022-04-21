@@ -5,6 +5,8 @@
 #include <sys/epoll.h>
 #include <stdbool.h>
 #include <assert.h>
+#include <unistd.h>
+#include <sys/syscall.h>
 
 typedef int (*real_listen_t)(int, int);
 typedef int (*real_accept_t)(int, struct sockaddr*, socklen_t *);
@@ -317,4 +319,28 @@ int real_open(const char *pathname, int flags){
 int real_ioctl(int fd, int cmd, void *argp){
   assert(real_ioctl_ptr);
   return real_ioctl_ptr(fd, cmd, argp);
+}
+
+int _mlock(void* dst, size_t size) {
+    return syscall(SYS_mlock, dst, size);
+}
+
+int _munlock(void* dst, size_t size) {
+    return syscall(SYS_munlock, dst, size);
+}
+
+int _mlockall(int flags){
+    return syscall(SYS_mlockall, flags);
+}
+
+pid_t _fork(void){
+    return syscall(SYS_fork);
+}
+
+long int random(void){
+    return 0;
+}
+
+int rand(void){
+    return 0;
 }

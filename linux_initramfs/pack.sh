@@ -41,7 +41,6 @@ cp -L /lib/x86_64-linux-gnu/libdl.so.2 rootTemplate/lib/x86_64-linux-gnu/libdl.s
 cp -L /lib/x86_64-linux-gnu/libc.so.6 rootTemplate//lib/x86_64-linux-gnu/libc.so.6
 cp -L /lib32/libc.so.6  rootTemplate//lib32/libc.so.6
 cp -L /lib/ld-linux.so.2 rootTemplate/lib/ld-linux.so.2
-cp -L /lib32/libdl.so.2 rootTemplate/lib32/libdl.so.2
 
 # fix nasty nss bugs (getpwnam_r, ...)
 cp /lib/x86_64-linux-gnu/libnss_compat.so.2 rootTemplate//lib/x86_64-linux-gnu/

@@ -10,8 +10,12 @@ fi
 if [ "$LEGACY_MODE" = "ON" ]
 then
   # old kAFL mode shared library
-  gcc -shared -O0 -m64 -Werror -DLEGACY_MODE -fPIC src/ld_preload_fuzz.c src/misc/crash_handler.c src/misc/harness_state.c  src/netfuzz/syscalls.c -I../../ -o bin64/ld_preload_fuzz_legacy.so -ldl -Isrc
-  gcc -shared -O0 -m64 -Werror -DLEGACY_MODE -DNO_PT_NYX -fPIC src/ld_preload_fuzz.c src/misc/crash_handler.c src/misc/harness_state.c  src/netfuzz/syscalls.c -I../../ -o bin64/ld_preload_fuzz_legacy_no_pt.so -ldl -Isrc
+  gcc -shared -O0 -m64 -Werror -DLEGACY_MODE -fPIC src/ld_preload_fuzz.c src/misc/crash_handler.c src/misc/exit_handler.c src/misc/harness_state.c  src/misc/syscalls.c src/misc/debug.c src/afl/autodict.c src/afl/cmplog.c -I../../ -o bin64/ld_preload_fuzz_legacy.so -ldl -lrt -lc -Isrc
+  gcc -shared -O0 -m64 -Werror -DLEGACY_MODE -DNO_PT_NYX -fPIC src/ld_preload_fuzz.c src/misc/crash_handler.c src/misc/exit_handler.c src/misc/harness_state.c  src/misc/syscalls.c src/misc/debug.c src/afl/autodict.c src/afl/cmplog.c -I../../ -o bin64/ld_preload_fuzz_legacy_no_pt.so -ldl -lrt -lc -Isrc
+
+  gcc -shared -O0 -m64 -Werror -DLEGACY_MODE -DNYX_CMPLOG -DNYX_DEBUG_AGENT -fPIC src/ld_preload_fuzz.c src/misc/crash_handler.c src/misc/exit_handler.c src/misc/harness_state.c  src/misc/syscalls.c src/misc/debug.c src/afl/autodict.c src/afl/cmplog.c -I../../ -o bin64/ld_preload_cmplog.so -ldl -lrt -lc -Isrc
+  gcc -shared -O0 -m64 -Werror -DLEGACY_MODE -DNYX_CMPLOG -DNYX_DEBUG_AGENT -DNO_PT_NYX -fPIC src/ld_preload_fuzz.c src/misc/crash_handler.c src/misc/exit_handler.c src/misc/harness_state.c  src/misc/syscalls.c src/misc/debug.c src/afl/autodict.c src/afl/cmplog.c -I../../ -o bin64/ld_preload_cmplog_no_pt.so -ldl -lrt -lc -Isrc
+
 else
   # latest and greatest nyx shared library
 
@@ -19,15 +23,15 @@ else
   then
     MODE="${UDP_MODE} ${CLIENT_MODE} ${DEBUG_MODE} ${STDOUT_STDERR_DEBUG}"
     #echo "MODES => $MODE"
-    clang -shared -g -O0 -m64 -Werror $EXTRA $MODE -fPIC src/ld_preload_fuzz.c src/misc/crash_handler.c src/misc/harness_state.c src/netfuzz/inject.c src/netfuzz/syscalls.c src/netfuzz/socket_cache.c -I../../ -DNET_FUZZ -I$NYX_SPEC_FOLDER -o bin64/ld_preload_fuzz.so -ldl -Isrc
-    clang -shared -g -O0 -m64 -Werror -DNO_PT_NYX $EXTRA $MODE -fPIC src/ld_preload_fuzz.c src/misc/crash_handler.c src/misc/harness_state.c src/netfuzz/inject.c src/netfuzz/syscalls.c src/netfuzz/socket_cache.c -I../../ -DNET_FUZZ -I$NYX_SPEC_FOLDER -o bin64/ld_preload_fuzz_no_pt.so -ldl -Isrc
+    clang -shared -g -O0 -m64 -Werror $EXTRA $MODE -fPIC src/ld_preload_fuzz.c src/misc/crash_handler.c src/misc/exit_handler.c src/misc/harness_state.c src/netfuzz/inject.c src/misc/syscalls.c src/misc/debug.c src/afl/autodict.c src/netfuzz/socket_cache.c -I../../ -DNET_FUZZ -I$NYX_SPEC_FOLDER -o bin64/ld_preload_fuzz.so -ldl -lrt -lc -Isrc
+    clang -shared -g -O0 -m64 -Werror -DNO_PT_NYX $EXTRA $MODE -fPIC src/ld_preload_fuzz.c src/misc/crash_handler.c src/misc/exit_handler.c src/misc/harness_state.c src/netfuzz/inject.c src/misc/syscalls.c src/misc/debug.c src/afl/autodict.c src/netfuzz/socket_cache.c -I../../ -DNET_FUZZ -I$NYX_SPEC_FOLDER -o bin64/ld_preload_fuzz_no_pt.so -ldl -lrt -lc -Isrc
 
   else
 
   if [ -n "$NYX_SPEC_FOLDER" ]
     then
-      gcc -shared -O0 -m64 -Werror -Wno-address-of-packed-member -fPIC src/ld_preload_fuzz.c src/misc/crash_handler.c src/netfuzz/syscalls.c src/misc/harness_state.c -I../../  -I$NYX_SPEC_FOLDER -o bin64/ld_preload_fuzz.so -ldl -Isrc
-      gcc -shared -O0 -m64 -Werror -DNO_PT_NYX -Wno-address-of-packed-member -fPIC src/ld_preload_fuzz.c src/misc/crash_handler.c src/netfuzz/syscalls.c src/misc/harness_state.c -I../../  -I$NYX_SPEC_FOLDER -o bin64/ld_preload_fuzz_no_pt.so -ldl -Isrc
+      gcc -shared -O0 -m64 -Werror -Wno-address-of-packed-member -fPIC src/ld_preload_fuzz.c src/misc/crash_handler.c src/misc/exit_handler.c src/misc/syscalls.c src/misc/debug.c src/afl/autodict.c src/misc/harness_state.c -I../../  -I$NYX_SPEC_FOLDER -o bin64/ld_preload_fuzz.so -ldl -lrt -lc -Isrc
+      gcc -shared -O0 -m64 -Werror -DNO_PT_NYX -Wno-address-of-packed-member -fPIC src/ld_preload_fuzz.c src/misc/crash_handler.c src/misc/exit_handler.c src/misc/syscalls.c src/misc/debug.c src/afl/autodict.c src/misc/harness_state.c -I../../  -I$NYX_SPEC_FOLDER -o bin64/ld_preload_fuzz_no_pt.so -ldl -lrt -lc -Isrc
     fi
   fi
 fi

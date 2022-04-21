@@ -170,6 +170,7 @@ def compile(config):
     PRE_PROCESS = config.argument_values["add_pre_process"]
     PRE_PROCESS_ARGS = config.argument_values["add_pre_process_args"]
     SET_CLIENT_UDP_PORT = config.argument_values["set_client_udp_port"]
+    CMPLOG_EXECUTABLE = config.argument_values["cmplog"]
 
     if config.argument_values["mode"] == "afl":
         LEGACY_MODE = True
@@ -258,6 +259,8 @@ def compile(config):
     if SPEC_FOLDER:
         copyfile("%s/%s"%(SPEC_FOLDER, "nyx_net_spec.msgp"), "%s/%s"%(config.argument_values["output_dir"], "spec.msgp"))
 
+    if CMPLOG_EXECUTABLE:
+        copyfile(CMPLOG_EXECUTABLE, "%s/%s"%(config.argument_values["output_dir"], "target_executable_cmplog"))
 
     if NYX_NET_STDIN:
         copyfile(NYX_NET_STDIN, "%s/%s"%(config.argument_values["output_dir"], "stdin.input"))
@@ -314,6 +317,14 @@ def compile(config):
     else:
         download_script += "chmod +x target_executable\n"
 
+    if CMPLOG_EXECUTABLE:
+        download_script += "./hget target_executable_cmplog target_executable_cmplog\n"
+        download_script += "./hget run_cmplog.sh run_cmplog.sh\n"
+        download_script += "./hget ld_preload_cmplog.so ld_preload_cmplog.so\n"
+        download_script += "chmod +x target_executable_cmplog\n"
+        download_script += "chmod +x /tmp/run_cmplog.sh\n"
+        download_script += "chmod +x /tmp/ld_preload_cmplog.so\n"
+
     if SETUP_FOLDER:
         download_script += "echo \"Let's get our setup script...\" | ./hcat\n"
         download_script += "./hget setup/setup.sh setup.sh\n"
@@ -349,6 +360,10 @@ def compile(config):
         ld_preload_fuzz_file = agent_folder + "ld_preload_fuzz_no_pt.so"
         copyfile(ld_preload_fuzz_file, "%s/%s"%(config.argument_values["output_dir"], os.path.basename(ld_preload_fuzz_file)))
     
+    if CMPLOG_EXECUTABLE:
+        ld_preload_cmplog = agent_folder + "ld_preload_cmplog.so"
+        copyfile(ld_preload_cmplog, "%s/%s"%(config.argument_values["output_dir"], os.path.basename(ld_preload_cmplog)))
+
     if PRE_PROCESS and PRE_PROCESS_ARGS:
         download_script += "chmod +x pre_process/pre_process\n"
         download_script += "./hget run.sh run.sh\n"
@@ -361,34 +376,36 @@ def compile(config):
         f.write(f_content)
         f.close()
 
-    download_script += "LD_LIBRARY_PATH=/tmp/:$LD_LIBRARY_PATH "
+    download_script += "\nLD_LIBRARY_PATH=/tmp/:$LD_LIBRARY_PATH \\\n"
 
     if asan_lib:
-        download_script += "LD_BIND_NOW=1 LD_PRELOAD=/tmp/%s:ld_preload_fuzz.so "%(asan_lib)
+        download_script += "LD_BIND_NOW=1 LD_PRELOAD=/tmp/%s:ld_preload_fuzz.so \\\n"%(asan_lib)
     else:
         download_script += "LD_BIND_NOW=1 LD_PRELOAD=/tmp/ld_preload_fuzz.so "
-    download_script += "ASAN_OPTIONS=detect_leaks=0:allocator_may_return_null=1:log_path=/tmp/data.log:abort_on_error=true __AFL_DEFER_FORKSRV=1 "
+    download_script += "ASAN_OPTIONS=detect_leaks=0:allocator_may_return_null=1:log_path=/tmp/data.log:abort_on_error=true __AFL_DEFER_FORKSRV=1 \\\n"
 
+    if CMPLOG_EXECUTABLE:
+        download_script += "NYX_CMPLOG=/tmp/target_executable_cmplog \\\n"
     if DELAYED_INIT:
-        download_script += "DELAYED_NYX_FUZZER_INIT=ON "
+        download_script += "DELAYED_NYX_FUZZER_INIT=ON \\\n"
     if COVERAGE_MODE:
-        download_script += "NYX_AFL_PLUS_PLUS_MODE=ON AFL_MAP_SIZE=8388608 "
+        download_script += "NYX_AFL_PLUS_PLUS_MODE=ON AFL_MAP_SIZE=8388608 \\\n"
     if FAST_EXIT_MODE:
-        download_script += "NYX_FAST_EXIT_MODE=TRUE "
+        download_script += "NYX_FAST_EXIT_MODE=TRUE \\\n"
     if NET_FUZZ_MODE:
-        download_script += "NYX_NET_FUZZ_MODE=ON "
+        download_script += "NYX_NET_FUZZ_MODE=ON \\\n"
     if NET_FUZZ_PORT:
-        download_script += "NYX_NET_PORT=%s "%(NET_FUZZ_PORT)
+        download_script += "NYX_NET_PORT=%s \\\n"%(NET_FUZZ_PORT)
     if LEGACY_FILE_MODE:
-        download_script += "NYX_LEGACY_FILE_MODE=%s "%(config.argument_values["file"])
+        download_script += "NYX_LEGACY_FILE_MODE=%s \\\n"%(config.argument_values["file"])
     if not DISABLE_PT_RANGE_A:
-        download_script += "NYX_PT_RANGE_AUTO_CONF_A=ON "
+        download_script += "NYX_PT_RANGE_AUTO_CONF_A=ON \\\n"
     if not DISABLE_PT_RANGE_B:
-        download_script += "NYX_PT_RANGE_AUTO_CONF_B=ON "
+        download_script += "NYX_PT_RANGE_AUTO_CONF_B=ON \\\n"
     if asan_lib or asan_executable:
-        download_script += "NYX_ASAN_EXECUTABLE=TRUE "
+        download_script += "NYX_ASAN_EXECUTABLE=TRUE \\\n"
     else:
-        download_script += "MALLOC_CHECK_=2 " 
+        download_script += "MALLOC_CHECK_=2 \\\n" 
 
     if ld_linux:
         download_script += "./%s ./target_executable %s"%(ld_linux, config.argument_values["args"]) # fixme
@@ -420,6 +437,43 @@ def compile(config):
     f = open("%s/fuzz_no_pt.sh"%(config.argument_values["output_dir"]), "w")
     f.write(download_script.replace("./hget hcat", "./hget hcat_no_pt").replace("./hget habort", "./hget habort_no_pt").replace("./hget ld_preload_fuzz.so", "./hget ld_preload_fuzz_no_pt.so"))
     f.close()
+
+    if CMPLOG_EXECUTABLE:
+        cmplog_script = "#!/bin/sh\n"
+
+        cmplog_script += "\nLD_LIBRARY_PATH=/tmp/:$LD_LIBRARY_PATH \\\n"        
+
+        if asan_lib:
+            cmplog_script += "LD_BIND_NOW=1 LD_PRELOAD=/tmp/%s:/tmp/ld_preload_cmplog.so \\\n"%(asan_lib)
+        else:
+            cmplog_script += "LD_BIND_NOW=1 LD_PRELOAD=/tmp/ld_preload_cmplog.so \\\n"
+
+        if DELAYED_INIT:
+            cmplog_script += "DELAYED_NYX_FUZZER_INIT=ON \\\n"
+        if COVERAGE_MODE:
+            cmplog_script += "NYX_AFL_PLUS_PLUS_MODE=ON \\\n"
+        if FAST_EXIT_MODE:
+            cmplog_script += "NYX_FAST_EXIT_MODE=TRUE \\\n"
+        if NET_FUZZ_MODE:
+            cmplog_script += "NYX_NET_FUZZ_MODE=ON \\\n"
+        if NET_FUZZ_PORT:
+            cmplog_script += "NYX_NET_PORT=%s \\\n"%(NET_FUZZ_PORT)
+        if LEGACY_FILE_MODE:
+            cmplog_script += "NYX_LEGACY_FILE_MODE=%s \\\n"%(config.argument_values["file"])
+
+        if ld_linux:
+            cmplog_script += "./%s /tmp/target_executable_cmplog %s 2> /tmp/yo.txt "%(ld_linux, config.argument_values["args"]) # fixme
+        else:
+            cmplog_script += "/tmp/target_executable_cmplog %s /tmp/yo.txt"%(config.argument_values["args"]) # fixme
+
+        cmplog_script += "\n"
+    
+        cmplog_script += "cat /tmp/yo.txt | ./hcat\n"
+        cmplog_script += "./habort \"cmplog failed?!\"\n"
+
+        f = open("%s/run_cmplog.sh"%(config.argument_values["output_dir"]), "w")
+        f.write(cmplog_script)
+        f.close()
 
     print(OKGREEN + INFO_PREFIX + "NYX share-dir is ready -> %s"%(config.argument_values["output_dir"]))
 
