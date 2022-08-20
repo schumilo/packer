@@ -138,40 +138,30 @@ typedef struct{
 #define KAFL_MODE_16	2
 
 #if defined(__i386__)
-#define KAFL_HYPERCALL_NO_PT(_rbx, _rcx) ({ \
-	uint32_t _rax = HYPERCALL_KAFL_RAX_ID_VMWARE; \
+#define KAFL_HYPERCALL_NO_PT(_ebx, _ecx) ({ \
+	uint32_t _eax = HYPERCALL_KAFL_RAX_ID_VMWARE; \
 	do{ \
-	uint32_t _rdx = VMWARE_PORT; \
 	asm volatile( \
-		"movl %1, %%ecx;" \
-		"movl %2, %%ebx;" \
-		"movl %3, %%eax;" \
-		"movl %4, %%edx;" \
 		"outl %%eax, %%dx;" \
-		"movl %%eax, %0;" \
-	: "=a" (_rax) \
-	: "g" (_rcx), "r" (_rbx), "g" (_rax), "g" (_rdx) \
-	: "ecx", "ebx", "edx" \
+	: "+a" (_eax) \
+	: "b" (_ebx), "c" (_ecx), "d" (VMWARE_PORT) \
+	: "cc", "memory" \
 	); \
 	} while(0); \
-	_rax; \
+	_eax; \
 })
 
-#define KAFL_HYPERCALL_PT(_rbx, _rcx) ({ \
-	uint32_t _rax = HYPERCALL_KAFL_RAX_ID; \
+#define KAFL_HYPERCALL_PT(_ebx, _ecx) ({ \
+	uint32_t _eax = HYPERCALL_KAFL_RAX_ID; \
 	do{ \
 	asm volatile( \
-		"movl %1, %%ecx;" \
-		"movl %2, %%ebx;" \
-		"movl %3, %%eax;" \
 		"vmcall;" \
-		"movl %%eax, %0;" \
-	: "=a" (_rax) \
-	: "r" (_rcx), "r" (_rbx), "r" (_rax) \
-	: "ecx", "ebx" \
+	: "+a" (_eax) \
+	: "b" (_ebx), "c" (_ecx) \
+	: "cc", "memory" \
 	); \
 	} while(0); \
-	_rax; \
+	_eax; \
 })
 
 #else
@@ -179,17 +169,11 @@ typedef struct{
 #define KAFL_HYPERCALL_NO_PT(_rbx, _rcx) ({ \
 	uint64_t _rax = HYPERCALL_KAFL_RAX_ID_VMWARE; \
 	do{ \
-	uint64_t _rdx = VMWARE_PORT; \
 	asm volatile( \
-		"movq %1, %%rcx;" \
-		"movq %2, %%rbx;" \
-		"movq %3, %%rax;" \
-		"movq %4, %%rdx;" \
 		"outl %%eax, %%dx;" \
-		"movq %%rax, %0;" \
-	: "=a" (_rax) \
-	: "r" (_rcx), "r" (_rbx), "r" (_rax), "r" (_rdx) \
-	: "rcx", "rbx", "rdx" \
+	: "+a" (_rax) \
+	: "b" (_rbx), "c" (_rcx), "d" (VMWARE_PORT) \
+	: "cc", "memory" \
 	); \
 	} while(0); \
 	_rax; \
@@ -199,14 +183,10 @@ typedef struct{
 	uint64_t _rax = HYPERCALL_KAFL_RAX_ID; \
 	do{ \
 	asm volatile( \
-		"movq %1, %%rcx;" \
-		"movq %2, %%rbx;" \
-		"movq %3, %%rax;" \
 		"vmcall;" \
-		"movq %%rax, %0;" \
-	: "=a" (_rax) \
-	: "r" (_rcx), "r" (_rbx), "r" (_rax) \
-	: "rcx", "rbx" \
+	: "+a" (_rax) \
+	: "b" (_rbx), "c" (_rcx) \
+	: "cc", "memory" \
 	); \
 	} while(0); \
 	_rax; \
@@ -267,7 +247,7 @@ static inline uint8_t alloc_hprintf_buffer(uint8_t** hprintf_buffer){
 #ifdef __MINGW64__
 		*hprintf_buffer = (uint8_t*)VirtualAlloc(0, HPRINTF_MAX_SIZE, MEM_COMMIT, PAGE_READWRITE);
 #else 
-		*hprintf_buffer = mmap((void*)NULL, HPRINTF_MAX_SIZE, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+		*hprintf_buffer = (uint8_t*)mmap((void*)NULL, HPRINTF_MAX_SIZE, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
 #endif
 		if(!*hprintf_buffer){
 			return 0;
@@ -323,7 +303,7 @@ static int is_nyx_vcpu(void){
 
 static int get_nyx_cpu_type(void){
 	unsigned long eax,ebx,ecx,edx;
-  char str[8];
+  char str[9];
   cpuid(0x80000004,eax,ebx,ecx,edx);	
 
   for(int j=0;j<4;j++){
