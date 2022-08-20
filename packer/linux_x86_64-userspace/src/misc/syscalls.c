@@ -337,6 +337,20 @@ pid_t _fork(void){
     return syscall(SYS_fork);
 }
 
+pid_t _waitpid(pid_t pid, int *status, int options){
+    return syscall(SYS_waitid, pid, status, options);
+}
+
+__attribute__ ((noreturn)) void _exit(int status) {
+    syscall(SYS_exit, status);
+	  __builtin_unreachable();
+}
+
+__attribute__ ((noreturn)) void _exit_group(int status){
+    syscall(SYS_exit_group, status);
+	  __builtin_unreachable();
+}
+
 long int random(void){
     return 0;
 }

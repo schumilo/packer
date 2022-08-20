@@ -48,3 +48,7 @@ int _mlockall(int flags);
 pid_t _fork(void);
 long int random(void);
 int rand(void);
+
+pid_t _waitpid(pid_t pid, int *status, int options);
+__attribute__ ((noreturn)) void _exit(int status);
+__attribute__ ((noreturn)) void _exit_group(int status);
